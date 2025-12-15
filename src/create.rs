@@ -9,7 +9,10 @@ use std::{
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, Event, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -40,16 +43,7 @@ fn process_card(card_path: PathBuf) -> Result<()> {
         }
     }
 
-    match capture_card_text(&card_path.display().to_string())? {
-        Some(body) if !body.trim().is_empty() => {
-            append_to_card(&card_path, &body)?;
-            println!("Card updated: {}", card_path.display());
-        }
-        Some(_) | None => {
-            println!("No text captured; nothing written.");
-        }
-    }
-
+    capture_cards(&card_path)?;
     Ok(())
 }
 
@@ -80,18 +74,24 @@ fn append_to_card(path: &Path, contents: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn capture_card_text(card_path: &str) -> io::Result<Option<String>> {
+fn capture_cards(card_path: &Path) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        PushKeyboardEnhancementFlags(
+            KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                | KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        )
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.show_cursor()?;
 
-    let mut input = String::new();
-    let mut confirmed = false;
-
     let editor_result: io::Result<()> = (|| {
+        let mut input = String::new();
+        let mut status: Option<String> = None;
         loop {
             terminal.draw(|frame| {
                 let area = frame.area();
@@ -101,16 +101,21 @@ fn capture_card_text(card_path: &str) -> io::Result<Option<String>> {
                     .split(area);
 
                 let editor_block = Block::default()
-                    .title(format!(" {} ", card_path).bold())
+                    .title(format!(" {} ", card_path.display()).bold())
                     .borders(Borders::ALL);
                 let editor = Paragraph::new(input.as_str())
                     .block(editor_block)
                     .wrap(Wrap { trim: false });
                 frame.render_widget(editor, chunks[0]);
 
-                let instructions =
-                    Paragraph::new("Ctrl-S to save • Esc to cancel • Enter for newline")
-                        .block(Block::default().borders(Borders::ALL).title(" Help "));
+                let mut help =
+                    String::from("Cmd/Ctrl+Enter to save • Esc/Ctrl-C to exit • Enter for newline");
+                if let Some(message) = &status {
+                    help.push('\n');
+                    help.push_str(message);
+                }
+                let instructions = Paragraph::new(help)
+                    .block(Block::default().borders(Borders::ALL).title(" Help "));
                 frame.render_widget(instructions, chunks[1]);
 
                 let cursor_line = input.split('\n').count().saturating_sub(1) as u16;
@@ -124,35 +129,56 @@ fn capture_card_text(card_path: &str) -> io::Result<Option<String>> {
             })?;
 
             if event::poll(Duration::from_millis(250))?
-                && let Event::Key(key) = event::read()? {
-                    if key.kind != KeyEventKind::Press {
-                        continue;
-                    }
-                    match key.code {
-                        KeyCode::Esc => break,
-                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            confirmed = true;
-                            break;
-                        }
-                        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            input.push(c);
-                        }
-                        KeyCode::Enter => input.push('\n'),
-                        KeyCode::Tab => input.push('\t'),
-                        KeyCode::Backspace => {
-                            input.pop();
-                        }
-                        _ => {}
-                    }
+                && let Event::Key(key) = event::read()?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
                 }
+
+                if key.code == KeyCode::Esc
+                    || (key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL))
+                {
+                    break;
+                }
+
+                if key.code == KeyCode::Enter
+                    && (key.modifiers.contains(KeyModifiers::SUPER)
+                        || key.modifiers.contains(KeyModifiers::CONTROL))
+                {
+                    if input.trim().is_empty() {
+                        status = Some(String::from("Card not saved (empty)."));
+                    } else {
+                        append_to_card(card_path, &input)?;
+                        status = Some(String::from("Card saved."));
+                    }
+                    input.clear();
+                    continue;
+                }
+
+                match key.code {
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        input.push(c);
+                    }
+                    KeyCode::Enter => input.push('\n'),
+                    KeyCode::Tab => input.push('\t'),
+                    KeyCode::Backspace => {
+                        input.pop();
+                    }
+                    _ => {}
+                }
+            }
         }
         Ok(())
     })();
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        PopKeyboardEnhancementFlags,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
 
-    editor_result?;
-    Ok(if confirmed { Some(input) } else { None })
+    editor_result
 }
