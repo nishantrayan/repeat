@@ -70,31 +70,56 @@ jobs:
         generate_release_notes: true
         files: ./dist/repeat
 
-  homebrew:
-    name: Update Homebrew Formula
-    runs-on: ubuntu-latest
-    needs: release
-    if: github.ref == 'refs/heads/main'
-    steps:
+homebrew:
+  name: Update Homebrew Formula
+  runs-on: ubuntu-latest
+  needs: release
+  if: github.ref == 'refs/heads/main'
+  steps:
     - name: Checkout Homebrew tap
       uses: actions/checkout@v4
       with:
         repository: shaankhosla/homebrew-tap
         token: ${{ secrets.GITHUB_TOKEN }}
         persist-credentials: false
+
     - name: Download release binary
       run: |
         curl -L -o repeat https://github.com/${{ github.repository }}/releases/latest/download/repeat
         sha256=$(sha256sum repeat | cut -d ' ' -f 1)
         echo "sha256=$sha256" >> $GITHUB_ENV
-    - name: Update formula
+
+    - name: Create or update formula
       run: |
-        sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/releases/download/${{ needs.release.outputs.tag_name }}/repeat\"|" Formula/repeat.rb
-        sed -i "s|sha256 \".*\"|sha256 \"${{ env.sha256 }}\"|" Formula/repeat.rb
+        mkdir -p Formula
+        formula_path="Formula/repeat.rb"
+
+        if [ ! -f "$formula_path" ]; then
+          echo "Creating new formula..."
+          cat <<EOF > $formula_path
+class Repeat < Formula
+  desc "Spaced repitition TUI tool"
+  homepage "https://github.com/${{ github.repository }}"
+  url "https://github.com/${{ github.repository }}/releases/download/${{ needs.release.outputs.tag_name }}/repeat"
+  sha256 "${{ env.sha256 }}"
+  version "${{ needs.release.outputs.tag_name }}"
+
+  def install
+    bin.install "repeat"
+  end
+end
+EOF
+        else
+          echo "Updating existing formula..."
+          sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/releases/download/${{ needs.release.outputs.tag_name }}/repeat\"|" $formula_path
+          sed -i "s|sha256 \".*\"|sha256 \"${{ env.sha256 }}\"|" $formula_path
+          sed -i "s|version \".*\"|version \"${{ needs.release.outputs.tag_name }}\"|" $formula_path
+        fi
+
     - name: Commit and push changes
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add Formula/repeat.rb
-        git commit -m "Update formula for ${{ needs.release.outputs.tag_name }}"
+        git commit -m "Update formula for ${{ needs.release.outputs.tag_name }}" || echo "No changes to commit"
         git push
