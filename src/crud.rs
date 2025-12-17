@@ -118,7 +118,11 @@ impl DB {
         Ok(count > 0)
     }
 
-    pub async fn due_today(&self, card_hashes: HashMap<String, Card>) -> Result<Vec<Card>> {
+    pub async fn due_today(
+        &self,
+        card_hashes: HashMap<String, Card>,
+        card_limit: Option<usize>,
+    ) -> Result<Vec<Card>> {
         let today = chrono::Local::now().date_naive();
 
         let sql = "SELECT card_hash 
@@ -134,6 +138,12 @@ impl DB {
 
             if let Some(card) = card_hashes.get(&card_hash) {
                 cards.push(card.clone());
+            }
+
+            if let Some(card_limit) = card_limit {
+                if cards.len() >= card_limit {
+                    break;
+                }
             }
         }
 

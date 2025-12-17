@@ -103,7 +103,7 @@ async fn capture_cards(db: &DB, card_path: &Path) -> io::Result<()> {
                 let area = frame.area();
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(3), Constraint::Length(5)])
+                    .constraints([Constraint::Min(3), Constraint::Length(4)])
                     .split(area);
 
                 view_height = chunks[0].height.saturating_sub(2) as usize;
