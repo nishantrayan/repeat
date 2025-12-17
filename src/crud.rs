@@ -128,7 +128,6 @@ impl DB {
             .bind(&card.card_hash)
             .fetch_one(&self.pool)
             .await?;
-
         Ok(count > 0)
     }
 
