@@ -2,6 +2,11 @@
 
 `repeat` is a local-first spaced repetition tool that keeps your decks in Markdown, hashes every card for identity, and schedules reviews with FSRS. Everything happens in the terminal: edit cards with a built-in TUI, drill them with a keyboard-only flow, and keep progress in a lightweight SQLite database.
 
+<p align="center">
+  <img src="create_example.png" alt="Creating cards in the built-in editor" width="45%" />
+  <img src="drill_example.png" alt="Drilling cards with the keyboard-only flow" width="45%" />
+</p>
+
 ## Features
 
 - Plain-text decks: recurse through directories of `.md` files; each `Q:/A:` or `C:` block is parsed into a flashcard.
