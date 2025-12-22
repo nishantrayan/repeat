@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -17,31 +17,7 @@ use crate::fsrs::Performance;
 use crate::fsrs::ReviewStatus;
 use crate::fsrs::ReviewedPerformance;
 use crate::fsrs::update_performance;
-
-#[derive(Debug, Default)]
-pub struct CardStats {
-    pub total_cards_in_db: i64,
-    pub num_cards: i64,
-    pub card_lifecycles: HashMap<CardLifeCycle, i64>,
-    pub due_cards: i64,
-    pub overdue_cards: i64,
-    pub upcoming_week: Vec<UpcomingCount>,
-    pub upcoming_month: i64,
-    pub file_paths: HashMap<PathBuf, usize>,
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub enum CardLifeCycle {
-    New,
-    Young,
-    Mature,
-}
-
-#[derive(Debug, Clone)]
-pub struct UpcomingCount {
-    pub day: String,
-    pub count: i64,
-}
+use crate::stats::CardStats;
 
 pub struct DB {
     pool: SqlitePool,
@@ -249,19 +225,14 @@ impl DB {
     }
 
     pub async fn collection_stats(&self, card_hashes: &HashMap<String, Card>) -> Result<CardStats> {
-        let now = chrono::Utc::now();
-        let week_horizon = now + chrono::Duration::days(7);
-        let month_horizon = now + chrono::Duration::days(30);
-
         let mut stats = CardStats {
             num_cards: card_hashes.len() as i64,
             ..Default::default()
         };
-        let mut upcoming_week_counts: BTreeMap<String, i64> = BTreeMap::new();
 
         let mut rows = sqlx::query(
             r#"
-            SELECT card_hash, review_count, due_date, interval_raw
+            SELECT card_hash, review_count, due_date, interval_raw, difficulty
             FROM cards
             "#,
         )
@@ -269,65 +240,22 @@ impl DB {
 
         while let Some(row) = rows.try_next().await? {
             let card_hash: String = row.get("card_hash");
+            let review_count: i64 = row.get("review_count");
+            let due_date = row
+                .try_get::<Option<String>, _>("due_date")?
+                .and_then(|due| chrono::DateTime::parse_from_rfc3339(&due).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let interval: f64 = row.get("interval_raw");
+            let difficulty: f64 = row.get("difficulty");
+
             stats.total_cards_in_db += 1;
 
             let card = match card_hashes.get(&card_hash) {
                 Some(card) => card,
                 None => continue,
             };
-            *stats.file_paths.entry(card.file_path.clone()).or_insert(0) += 1;
-
-            let review_count: i64 = row.get("review_count");
-            if review_count == 0 {
-                *stats.card_lifecycles.entry(CardLifeCycle::New).or_insert(0) += 1;
-            } else {
-                let interval: f64 = row.get("interval_raw");
-                if interval > 21.0 {
-                    *stats
-                        .card_lifecycles
-                        .entry(CardLifeCycle::Mature)
-                        .or_insert(0) += 1;
-                } else {
-                    *stats
-                        .card_lifecycles
-                        .entry(CardLifeCycle::Young)
-                        .or_insert(0) += 1;
-                }
-            }
-
-            let due_date = row
-                .try_get::<Option<String>, _>("due_date")?
-                .and_then(|due| chrono::DateTime::parse_from_rfc3339(&due).ok())
-                .map(|dt| dt.with_timezone(&chrono::Utc));
-
-            match due_date {
-                None => {
-                    stats.due_cards += 1;
-                }
-                Some(due_date) => {
-                    if due_date <= now {
-                        stats.due_cards += 1;
-                        if due_date < now {
-                            stats.overdue_cards += 1;
-                        }
-                    } else {
-                        if due_date <= week_horizon {
-                            let day = due_date.format("%Y-%m-%d").to_string();
-                            *upcoming_week_counts.entry(day).or_insert(0) += 1;
-                        }
-
-                        if due_date <= month_horizon {
-                            stats.upcoming_month += 1;
-                        }
-                    }
-                }
-            }
+            stats.update(card, review_count, due_date, interval, difficulty);
         }
-
-        stats.upcoming_week = upcoming_week_counts
-            .into_iter()
-            .map(|(day, count)| UpcomingCount { day, count })
-            .collect();
 
         Ok(stats)
     }

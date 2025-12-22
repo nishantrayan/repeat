@@ -9,6 +9,7 @@ mod crud;
 mod drill;
 mod editor;
 mod fsrs;
+mod stats;
 mod theme;
 pub(crate) mod utils;
 
