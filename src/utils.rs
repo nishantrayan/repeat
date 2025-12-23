@@ -1,4 +1,5 @@
-use std::fs::{self, File};
+use ignore::WalkBuilder;
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -6,9 +7,10 @@ use anyhow::{Result, anyhow};
 
 use crate::card::{Card, CardContent};
 
-pub fn validate_file_can_be_card(path: String) -> Result<PathBuf> {
-    let card_path = trim_line(&path).ok_or_else(|| anyhow!("Card path cannot be empty"))?;
-    let card_path = PathBuf::from(card_path);
+pub fn validate_path_can_be_card(card_path: &Path) -> Result<PathBuf> {
+    if !card_path.exists() {
+        return Err(anyhow!("Card path does not exist: {}", card_path.display()));
+    }
     if card_path.is_dir() {
         return Err(anyhow!(
             "Card path cannot be a directory: {}",
@@ -16,15 +18,19 @@ pub fn validate_file_can_be_card(path: String) -> Result<PathBuf> {
         ));
     }
 
-    if !is_markdown(&card_path) {
+    if !card_path.is_file() {
+        return Err(anyhow!("Card path must be a file: {}", card_path.display()));
+    }
+    if !is_markdown(card_path) {
         return Err(anyhow!(
             "Card path must be a markdown file: {}",
             card_path.display()
         ));
     }
 
-    Ok(card_path)
+    Ok(card_path.to_path_buf())
 }
+
 pub fn is_markdown(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
@@ -203,49 +209,55 @@ pub fn cards_from_md(path: &Path) -> Result<Vec<Card>> {
     Ok(cards)
 }
 
-fn collect_markdown_files(path: &Path, acc: &mut Vec<PathBuf>) -> Result<()> {
-    if path.is_file() {
-        if is_markdown(path) {
-            acc.push(path.to_path_buf());
-        }
-        return Ok(());
+fn collect_markdown_files(path: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if validate_path_can_be_card(path).is_ok() {
+        files.push(path.to_path_buf());
+        return files;
     }
-
-    if path.is_dir() {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let entry_path = entry.path();
-            if entry.file_type()?.is_dir() {
-                collect_markdown_files(&entry_path, acc)?;
-            } else if is_markdown(&entry_path) {
-                acc.push(entry_path);
+    let walker = WalkBuilder::new(path)
+        .hidden(false)
+        .git_ignore(true)
+        .git_exclude(true)
+        .build();
+    for result in walker {
+        let entry = match result {
+            Ok(e) => e,
+            Err(_) => {
+                continue;
             }
+        };
+
+        let p = entry.path();
+        if validate_path_can_be_card(p).is_ok() {
+            files.push(p.to_path_buf());
         }
-        return Ok(());
     }
 
-    Err(anyhow!("Path does not exist: {}", path.display()))
+    files.sort();
+    files.dedup();
+    files
 }
 
-pub fn cards_from_files(paths: &[PathBuf]) -> Result<Vec<Card>> {
-    let mut cards = Vec::new();
+pub fn cards_from_paths(paths: &[PathBuf]) -> Result<Vec<Card>> {
+    let mut markdown_files = Vec::new();
     for path in paths {
-        cards.extend(cards_from_md(path)?);
+        let path_files = collect_markdown_files(path);
+        markdown_files.extend(path_files);
+    }
+
+    markdown_files.sort();
+    markdown_files.dedup();
+    let mut cards = Vec::new();
+    for path in markdown_files {
+        cards.extend(cards_from_md(&path)?);
     }
     Ok(cards)
 }
 
-pub fn cards_from_dir(path: &Path) -> Result<Vec<Card>> {
-    let mut markdown_files = Vec::new();
-    collect_markdown_files(path, &mut markdown_files)?;
-    markdown_files.sort();
-
-    cards_from_files(&markdown_files)
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::utils::{cards_from_dir, content_to_card, parse_card_lines};
+    use crate::utils::{cards_from_paths, content_to_card, parse_card_lines};
     use std::path::PathBuf;
 
     use crate::card::CardContent;
@@ -313,7 +325,7 @@ mod tests {
     #[test]
     fn collects_cards_from_directory() {
         let dir_path = PathBuf::from("test_data");
-        let cards = cards_from_dir(&dir_path).expect("should collect cards");
+        let cards = cards_from_paths(&[dir_path]).expect("should collect cards");
         assert_eq!(cards.len(), 8);
         assert!(
             cards

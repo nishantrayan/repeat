@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::PathBuf;
 
 use self::crud::DB;
 
@@ -36,7 +37,7 @@ enum Args {
     /// Create or append to a card
     Create {
         /// Card path
-        card_path: String,
+        path: String,
     },
 }
 
@@ -52,16 +53,19 @@ async fn main() {
             card_limit,
             new_card_limit,
         } => {
+            let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
             if let Err(error) = drill::run(&db, paths, card_limit, new_card_limit).await {
                 eprintln!("error: {error}")
             }
         }
         Args::Check { paths } => {
+            let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
             if let Err(error) = check::run(&db, paths).await {
                 eprintln!("error: {error}")
             }
         }
-        Args::Create { card_path } => {
+        Args::Create { path } => {
+            let card_path = PathBuf::from(path);
             if let Err(err) = create::run(&db, card_path).await {
                 eprintln!("error: {err}");
             }

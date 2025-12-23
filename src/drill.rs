@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::io;
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::card::{Card, CardContent};
 use crate::crud::DB;
 use crate::fsrs::ReviewStatus;
 use crate::theme::Theme;
-use crate::utils::{cards_from_dir, cards_from_md};
+use crate::utils::cards_from_paths;
 
 use anyhow::{Context, Result};
 use crossterm::event::KeyModifiers;
@@ -29,7 +29,7 @@ use ratatui::{
 
 pub async fn run(
     db: &DB,
-    paths: Vec<String>,
+    paths: Vec<PathBuf>,
     card_limit: Option<usize>,
     new_card_limit: Option<usize>,
 ) -> Result<()> {
@@ -46,25 +46,11 @@ pub async fn run(
     Ok(())
 }
 
-pub async fn register_all_cards(db: &DB, paths: Vec<String>) -> Result<HashMap<String, Card>> {
-    let mut all_cards = Vec::new();
+pub async fn register_all_cards(db: &DB, paths: Vec<PathBuf>) -> Result<HashMap<String, Card>> {
+    let cards = cards_from_paths(&paths)?;
+    db.add_cards_batch(&cards).await?;
 
-    for path in paths {
-        let p = Path::new(&path);
-
-        if p.is_dir() {
-            let mut cards = cards_from_dir(p)?;
-            all_cards.append(&mut cards);
-        } else if p.is_file() {
-            let mut cards = cards_from_md(p)?;
-            all_cards.append(&mut cards);
-        } else {
-            eprintln!("Warning: {path} does not exist or is not accessible.");
-        }
-    }
-    db.add_cards_batch(&all_cards).await?;
-
-    let hash_cards: HashMap<String, Card> = all_cards
+    let hash_cards: HashMap<String, Card> = cards
         .into_iter()
         .map(|c| {
             let hash = c.card_hash.clone();

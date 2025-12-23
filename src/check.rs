@@ -5,7 +5,7 @@ use crate::{
     theme::Theme,
 };
 
-use std::{cmp, io, time::Duration};
+use std::{cmp, io, path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use chrono::NaiveDate;
@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Bar, BarChart, BarGroup, Paragraph, Wrap},
 };
 
-pub async fn run(db: &DB, paths: Vec<String>) -> Result<usize> {
+pub async fn run(db: &DB, paths: Vec<PathBuf>) -> Result<usize> {
     let card_hashes = register_all_cards(db, paths).await?;
     let count = card_hashes.len();
     let stats = db.collection_stats(&card_hashes).await?;

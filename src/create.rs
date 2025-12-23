@@ -3,14 +3,14 @@ use crate::{
     crud::DB,
     editor::Editor,
     theme::Theme,
-    utils::{cards_from_md, content_to_card, validate_file_can_be_card},
+    utils::{cards_from_md, content_to_card, is_markdown},
 };
 
 use std::{
     collections::HashSet,
     fs::{self, OpenOptions},
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
     time::Duration,
 };
 
@@ -31,8 +31,14 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-pub async fn run(db: &DB, card_path: String) -> Result<()> {
-    let card_path = validate_file_can_be_card(card_path)?;
+pub async fn run(db: &DB, card_path: PathBuf) -> Result<()> {
+    if !is_markdown(&card_path) {
+        return Err(anyhow!(
+            "Card path must be a markdown file: {}",
+            card_path.display()
+        ));
+    }
+
     let file_exists = card_path.is_file();
     if !file_exists && !prompt_create(&card_path)? {
         println!("Aborting; card not created.");
