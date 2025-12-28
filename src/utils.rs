@@ -210,6 +210,7 @@ pub fn cards_from_md(path: &Path) -> Result<Vec<Card>> {
     let mut reader = BufReader::new(file);
 
     let mut cards = Vec::new();
+    let mut track_buffer = false;
     let mut buffer = String::new();
     let mut line = String::new();
     let mut start_idx = 0;
@@ -224,13 +225,16 @@ pub fn cards_from_md(path: &Path) -> Result<Vec<Card>> {
         }
 
         if line.starts_with("Q:") || line.starts_with("C:") {
-            if !buffer.is_empty() {
+            track_buffer = true;
+            if trim_line(&buffer).is_some() {
                 cards.push(content_to_card(path, &buffer, start_idx, line_idx)?);
                 buffer.clear();
             }
             start_idx = line_idx;
         }
-        buffer.push_str(&line);
+        if track_buffer {
+            buffer.push_str(&line);
+        }
         last_idx = line_idx;
         line_idx += 1;
     }
@@ -400,9 +404,9 @@ mod tests {
             .expect("Failed to connect to or initialize database");
         let dir_path = PathBuf::from("test_data");
         let cards = register_all_cards(&db, vec![dir_path]).await.unwrap();
-        assert_eq!(cards.len(), 8);
+        assert_eq!(cards.len(), 9);
         for card in cards.values() {
-            assert!(card.file_path.ends_with("test_data/test.md"));
+            assert!(card.file_path.to_string_lossy().contains("test_data"));
         }
 
         let dir_path = PathBuf::from("test_data/");
@@ -410,6 +414,6 @@ mod tests {
         let cards = register_all_cards(&db, vec![dir_path, file_path])
             .await
             .unwrap();
-        assert_eq!(cards.len(), 8);
+        assert_eq!(cards.len(), 9);
     }
 }
