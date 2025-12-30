@@ -4,6 +4,7 @@ precommit:
     cargo clippy --fix --allow-dirty --allow-staged
     cargo machete
     cargo test
+    git-cliff -o CHANGELOG.md
 
 delete_db:
     -rm "/Users/shaankhosla/Library/Application Support/repeat/cards.db"

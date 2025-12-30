@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.0.15] - 2025-12-30
 
 ### 💼 Other
 
@@ -17,6 +17,24 @@
 ---------
 
 Co-authored-by: Shaan <shaankhosla@macbook-pro.mynetworksettings.com>
+- Added cliff and changelog
+- Bump crossterm from 0.28.1 to 0.29.0 (#13)
+
+Bumps [crossterm](https://github.com/crossterm-rs/crossterm) from 0.28.1 to 0.29.0.
+- [Release notes](https://github.com/crossterm-rs/crossterm/releases)
+- [Changelog](https://github.com/crossterm-rs/crossterm/blob/master/CHANGELOG.md)
+- [Commits](https://github.com/crossterm-rs/crossterm/commits/0.29)
+
+---
+updated-dependencies:
+- dependency-name: crossterm
+  dependency-version: 0.29.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
 ## [0.0.14] - 2025-12-30
 
 ### 💼 Other
