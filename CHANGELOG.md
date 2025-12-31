@@ -1,9 +1,21 @@
-## [0.0.21] - 2025-12-31
+## [0.0.22] - 2025-12-31
 
 ### 🚀 Features
 
-- Notify users when CLI has a new version (#16)
+- Import from Anki (#17)
+
+### 🐛 Bug Fixes
+
+- Remove dbg statement
 
 ### 💼 Other
 
-- Update README.md
+- Fix release pipeline
+
+### 🚜 Refactor
+
+- Made the CLI experience better
+
+### ⚙️ Miscellaneous Tasks
+
+- Upgrade criterion
