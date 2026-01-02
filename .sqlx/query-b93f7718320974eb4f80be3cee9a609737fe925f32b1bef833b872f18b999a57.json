@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            card_hash,\n            review_stage as \"review_stage!: ReviewStage\"\n        FROM cards\n        WHERE due_date <= ? OR review_stage = ?\n        ORDER BY\n            CASE WHEN review_stage = ? THEN 1 ELSE 0 END,\n            due_date ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_hash",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "review_stage!: ReviewStage",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b93f7718320974eb4f80be3cee9a609737fe925f32b1bef833b872f18b999a57"
+}

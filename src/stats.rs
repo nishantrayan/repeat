@@ -144,12 +144,12 @@ mod tests {
     fn default_row() -> CardStatsRow {
         CardStatsRow {
             card_hash: "hash".into(),
-            review_count: 0,
             due_date: None,
             interval_raw: None,
             difficulty: None,
             stability: None,
             last_reviewed_at: None,
+            review_stage: ReviewStage::New,
         }
     }
 
@@ -174,7 +174,7 @@ mod tests {
         let mut stats = CardStats::default();
         let card = sample_card("deck/file.md");
         let mut row = default_row();
-        row.review_count = 5;
+        row.review_stage = ReviewStage::Review;
         row.interval_raw = Some(30.0);
         row.due_date = Some(Utc::now() + Duration::days(3));
 
@@ -194,7 +194,6 @@ mod tests {
         let mut stats = CardStats::default();
         let card = sample_card("deck/file.md");
         let mut row = default_row();
-        row.review_count = 2;
         row.interval_raw = Some(5.0);
         row.stability = Some(5.0);
         row.last_reviewed_at = Some(Utc::now() - Duration::days(4));

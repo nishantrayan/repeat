@@ -1,6 +1,6 @@
 use std::io;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::card::{Card, CardContent};
 use crate::crud::DB;
@@ -57,6 +57,7 @@ struct DrillState<'a> {
 struct LastAction {
     action: ReviewStatus,
     show_again_duration: f64,
+    last_reviewed_at: Instant,
 }
 impl LastAction {
     fn print(&self) -> String {
@@ -118,6 +119,7 @@ impl<'a> DrillState<'a> {
         self.last_action = Some(LastAction {
             action,
             show_again_duration,
+            last_reviewed_at: std::time::Instant::now(),
         });
         self.current_idx += 1;
         self.show_answer = false;
@@ -269,7 +271,9 @@ fn instructions_text(state: &DrillState<'_>) -> Vec<Line<'static>> {
         ]));
     }
 
-    if let Some(action) = &state.last_action {
+    if let Some(action) = &state.last_action
+        && action.last_reviewed_at.elapsed().as_secs_f32() < 1.5
+    {
         let style = match action.action {
             ReviewStatus::Pass => Theme::success(),
             ReviewStatus::Fail => Theme::danger(),

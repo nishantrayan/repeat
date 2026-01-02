@@ -13,6 +13,7 @@ const MAX_INTERVAL: f64 = 256.0;
 const MINUTES_PER_DAY: f64 = 60.0 * 24.0;
 const LEARNING_A_INTERVAL_MINS: i64 = 1;
 const LEARNING_B_INTERVAL_MINS: i64 = 10;
+const GRADUATING_INTERVAL_DAYS: i64 = 1;
 
 pub fn calculate_recall(interval: f64, stability: f64) -> f64 {
     (1.0 + F * (interval / stability)).powf(C)
@@ -165,7 +166,15 @@ pub fn update_performance(
         (Performance::Review(_), ReviewStatus::Pass) => Performance::Review(reviewed),
     };
 
+    let just_graduated = matches!(perf, Performance::LearningB(r) if r.review_count == 1)
+        && matches!(performance, Performance::Review(_))
+        && review_status == ReviewStatus::Pass;
+
     apply_learning_intervals(&mut performance);
+
+    if just_graduated {
+        apply_graduating_interval(&mut performance);
+    }
     performance
 }
 
@@ -232,12 +241,20 @@ fn apply_learning_intervals(perf: &mut Performance) {
     reviewed.due_date = reviewed.last_reviewed_at + Duration::minutes(minutes);
 }
 
+fn apply_graduating_interval(perf: &mut Performance) {
+    if let Performance::Review(reviewed) = perf {
+        reviewed.interval_raw = GRADUATING_INTERVAL_DAYS as f64;
+        reviewed.interval_days = GRADUATING_INTERVAL_DAYS as usize;
+        reviewed.due_date = reviewed.last_reviewed_at + Duration::days(GRADUATING_INTERVAL_DAYS);
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::{
-        LEARNING_A_INTERVAL_MINS, LEARNING_B_INTERVAL_MINS, MAX_INTERVAL, MIN_INTERVAL, Performance,
-        ReviewStatus, ReviewedPerformance, fsrs_schedule, update_performance,
+        LEARNING_A_INTERVAL_MINS, LEARNING_B_INTERVAL_MINS, MAX_INTERVAL, MIN_INTERVAL,
+        Performance, ReviewStatus, ReviewedPerformance, fsrs_schedule, update_performance,
     };
 
     use chrono::Duration;
