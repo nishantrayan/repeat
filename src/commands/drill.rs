@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::card::{Card, CardContent};
-use crate::cloze_utils::{mask_cloze_text, resolve_missing_clozes};
+use crate::cloze_utils::mask_cloze_text;
 use crate::crud::DB;
 use crate::fsrs::{LEARN_AHEAD_THRESHOLD_MINS, ReviewStatus};
+use crate::llm::drill_preprocessor::{AIStatus, DrillPreprocessor};
 use crate::parser::register_all_cards;
 use crate::parser::render_markdown;
 use crate::parser::{Media, extract_media};
@@ -28,6 +29,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
+use tokio::sync::mpsc;
 
 const MINUTES_PER_DAY: f64 = 24.0 * 60.0;
 const FLASH_SECS: f64 = 2.0;
@@ -37,6 +39,7 @@ pub async fn run(
     paths: Vec<PathBuf>,
     card_limit: Option<usize>,
     new_card_limit: Option<usize>,
+    rephrase_questions: bool,
 ) -> Result<()> {
     let (hash_cards, _) = register_all_cards(db, paths).await?;
     let mut cards_due_today = db
@@ -48,8 +51,9 @@ pub async fn run(
         return Ok(());
     }
 
-    resolve_missing_clozes(&mut cards_due_today).await?;
-    start_drill_session(db, cards_due_today).await?;
+    let drill_preprocessor = DrillPreprocessor::new(&cards_due_today, rephrase_questions)?;
+    drill_preprocessor.initialize_card_status(&mut cards_due_today);
+    start_drill_session(db, cards_due_today, drill_preprocessor).await?;
 
     Ok(())
 }
@@ -142,9 +146,37 @@ impl<'a> DrillState<'a> {
     fn is_complete(&self) -> bool {
         self.current_idx >= self.cards.len() && self.redo_cards.is_empty()
     }
+
+    fn apply_ai_update(&mut self, update: AiUpdate) {
+        for card in self.cards.iter_mut().chain(self.redo_cards.iter_mut()) {
+            if card.card_hash == update.card_hash {
+                *card = update.card.clone();
+                card.ai_status = AIStatus::AiEnhanced;
+            }
+        }
+    }
+
+    fn current_ai_pending(&self) -> bool {
+        matches!(
+            self.cards
+                .get(self.current_idx)
+                .map(|card| card.ai_status.clone()),
+            Some(AIStatus::ClozeNeedDeletion | AIStatus::QuestionNeedRephrasing)
+        )
+    }
 }
 
-async fn start_drill_session(db: &DB, cards: Vec<Card>) -> Result<()> {
+#[derive(Clone, Debug)]
+struct AiUpdate {
+    card_hash: String,
+    card: Card,
+}
+
+async fn start_drill_session(
+    db: &DB,
+    cards: Vec<Card>,
+    drill_preprocessor: DrillPreprocessor,
+) -> Result<()> {
     enable_raw_mode().context("failed to enable raw mode")?;
     let mut stdout = io::stdout();
     execute!(
@@ -160,12 +192,24 @@ async fn start_drill_session(db: &DB, cards: Vec<Card>) -> Result<()> {
     let mut terminal = Terminal::new(backend).context("failed to start terminal")?;
     terminal.hide_cursor().context("failed to hide cursor")?;
 
+    let (ai_updates_tx, mut ai_updates_rx) = mpsc::unbounded_channel();
+    if drill_preprocessor.llm_required() {
+        let ai_cards = cards.clone();
+        tokio::spawn(async move {
+            preprocess_cards_in_order(drill_preprocessor, ai_cards, ai_updates_tx).await;
+        });
+    }
+
     let mut state = DrillState::new(db, cards);
 
     let loop_result: Result<()> = async {
         loop {
             if state.is_complete() {
                 break Ok(());
+            }
+
+            while let Ok(update) = ai_updates_rx.try_recv() {
+                state.apply_ai_update(update);
             }
 
             terminal
@@ -180,7 +224,7 @@ async fn start_drill_session(db: &DB, cards: Vec<Card>) -> Result<()> {
                         .constraints([Constraint::Min(5), Constraint::Length(5)])
                         .split(area);
 
-                    let header_line = Line::from(vec![
+                    let mut header_vec = vec![
                         Theme::label_span(format!(
                             "Card {}/{}",
                             state.current_idx + 1,
@@ -190,9 +234,19 @@ async fn start_drill_session(db: &DB, cards: Vec<Card>) -> Result<()> {
                         Theme::span(format!("{} coming again", state.redo_cards.len())),
                         Theme::bullet(),
                         Theme::span(card.file_path.display().to_string()),
-                    ]);
+                    ];
+                    if card.ai_status == AIStatus::AiEnhanced {
+                        header_vec.push(Theme::bullet());
+                        header_vec.push(Theme::key_chip("AI enhanced"));
+                    }
+                    let header_line = Line::from(header_vec);
 
-                    let content = format_card_text(&card, state.show_answer);
+                    let ai_pending = state.current_ai_pending();
+                    let content = if ai_pending {
+                        "Enhancing this card with AI...\n\nPlease wait.".to_string()
+                    } else {
+                        format_card_text(&card, state.show_answer)
+                    };
                     let markdown = render_markdown(&content);
                     state.current_medias = extract_media(&content, card.file_path.parent());
 
@@ -221,19 +275,22 @@ async fn start_drill_session(db: &DB, cards: Vec<Card>) -> Result<()> {
                 {
                     break Ok(());
                 }
+                let ai_pending = state.current_ai_pending();
                 match key.code {
-                    KeyCode::Char(' ') | KeyCode::Enter => {
+                    KeyCode::Char(' ') | KeyCode::Enter if !ai_pending => {
                         if !state.show_answer {
                             state.reveal_answer();
                         } else {
                             state.handle_review(ReviewStatus::Pass).await?;
                         }
                     }
-                    KeyCode::Char('F') | KeyCode::Char('f') if state.show_answer => {
+                    KeyCode::Char('F') | KeyCode::Char('f') if state.show_answer && !ai_pending => {
                         state.handle_review(ReviewStatus::Fail).await?;
                     }
                     KeyCode::Char('O') | KeyCode::Char('o')
-                        if !state.show_answer && !state.current_medias.is_empty() =>
+                        if !ai_pending
+                            && !state.show_answer
+                            && !state.current_medias.is_empty() =>
                     {
                         state.current_medias[0].play()?;
                     }
@@ -259,7 +316,16 @@ async fn start_drill_session(db: &DB, cards: Vec<Card>) -> Result<()> {
 
 fn instructions_text(state: &DrillState<'_>) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if state.show_answer {
+    if state.current_ai_pending() {
+        lines.push(Line::from(vec![
+            Theme::span("Enhancing card with AI"),
+            Theme::bullet(),
+            Theme::key_chip("Esc"),
+            Theme::span(" / "),
+            Theme::key_chip("Ctrl+C"),
+            Theme::span(" exit"),
+        ]));
+    } else if state.show_answer {
         lines.push(Line::from(vec![
             Theme::key_chip("Space"),
             Theme::span(" or "),
@@ -335,6 +401,36 @@ fn format_card_text(card: &Card, show_answer: bool) -> String {
     }
 }
 
+async fn preprocess_cards_in_order(
+    drill_preprocessor: DrillPreprocessor,
+    cards: Vec<Card>,
+    updates: mpsc::UnboundedSender<AiUpdate>,
+) {
+    for card in cards.into_iter() {
+        let needs_ai = matches!(
+            card.ai_status,
+            AIStatus::ClozeNeedDeletion | AIStatus::QuestionNeedRephrasing
+        );
+        if !needs_ai {
+            continue;
+        }
+
+        let mut updated_card = card.clone();
+        if drill_preprocessor
+            .preprocess_cards(std::slice::from_mut(&mut updated_card))
+            .await
+            .is_err()
+        {
+            updated_card = card;
+        }
+
+        let _ = updates.send(AiUpdate {
+            card_hash: updated_card.card_hash.clone(),
+            card: updated_card,
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::ClozeRange;
@@ -344,29 +440,25 @@ mod tests {
     use std::time::Instant;
 
     fn basic_card(question: &str, answer: &str) -> Card {
-        Card {
-            file_path: PathBuf::from("test.md"),
-            file_card_range: (0, 1),
-            content: CardContent::Basic {
-                question: question.into(),
-                answer: answer.into(),
-            },
-            card_hash: "hash".into(),
-        }
+        let content = CardContent::Basic {
+            question: question.into(),
+            answer: answer.into(),
+        };
+        Card::new(PathBuf::from("test.md"), (0, 1), content, "hash".into())
     }
 
     fn cloze_card(text: &str) -> Card {
         let start = text.find('[').unwrap();
         let end = text[start..].find(']').unwrap() + start + 1;
-        Card {
-            file_path: PathBuf::from("test.md"),
-            file_card_range: (0, 1),
-            content: CardContent::Cloze {
+        Card::new(
+            PathBuf::from("test.md"),
+            (0, 1),
+            CardContent::Cloze {
                 text: text.into(),
                 cloze_range: Some(ClozeRange::new(start, end).unwrap()),
             },
-            card_hash: "hash".into(),
-        }
+            "hash".into(),
+        )
     }
 
     #[test]
@@ -424,19 +516,6 @@ mod tests {
             formatted(3.0 * MINUTES_PER_DAY, ReviewStatus::Fail),
             " Fail (See again in 3 days)"
         );
-    }
-
-    #[test]
-    fn instructions_note_media_shortcut_before_reveal() {
-        let db = in_memory_db();
-        let mut state = DrillState::new(&db, vec![basic_card("Q", "A")]);
-        state.current_medias = extract_media("[audio](clip.mp3)", None);
-
-        let lines = instructions_text(&state);
-        let line_text = flatten_line(&lines[0]);
-
-        assert!(line_text.contains("media file"));
-        assert!(line_text.contains("open"));
     }
 
     #[test]

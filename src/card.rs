@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 
+use crate::llm::drill_preprocessor::AIStatus;
+
 #[derive(Clone, Debug)]
 pub struct Card {
     pub file_path: PathBuf,
@@ -9,6 +11,24 @@ pub struct Card {
     pub file_card_range: (usize, usize),
     pub content: CardContent,
     pub card_hash: String,
+    pub ai_status: AIStatus,
+}
+
+impl Card {
+    pub fn new(
+        file_path: PathBuf,
+        file_card_range: (usize, usize),
+        content: CardContent,
+        card_hash: String,
+    ) -> Self {
+        Card {
+            file_path,
+            file_card_range,
+            content,
+            card_hash,
+            ai_status: AIStatus::NoNeed,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
