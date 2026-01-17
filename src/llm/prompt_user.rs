@@ -57,8 +57,7 @@ fn cloze_build_user_prompt(total_needing: usize, card_text: &str) -> String {
 
     user_prompt.push('\n');
     user_prompt.push_str(&format!(
-        "{} found {} cloze card{plural} missing bracketed deletions.\n\
-        Please format correctly or use AI to generate them for you.\n",
+        "{} found {} cloze card{plural} missing bracketed deletions.\n",
         Palette::paint(Palette::INFO, "repeater"),
         Palette::paint(Palette::WARNING, total_needing),
         plural = plural,
@@ -122,14 +121,14 @@ mod tests {
         let user_prompt = cloze_build_user_prompt(1, card_text);
         assert_eq!(
             user_prompt,
-            "\n\u{1b}[36mrepeater\u{1b}[0m found \u{1b}[33m1\u{1b}[0m cloze card missing bracketed deletions.\nPlease format correctly or use AI to generate them for you.\n\n\n\u{1b}[2mExample needing a Cloze:\u{1b}[0m\nthe moon revolves around the earth\n\n\u{1b}[36mrepeater\u{1b}[0m can send this text to an LLM to generate a Cloze for you.\n"
+            "\n\u{1b}[36mrepeater\u{1b}[0m found \u{1b}[33m1\u{1b}[0m cloze card missing bracketed deletions.\n\n\n\u{1b}[2mExample needing a Cloze:\u{1b}[0m\nthe moon revolves around the earth\n\n\u{1b}[36mrepeater\u{1b}[0m can send this text to an LLM to generate a Cloze for you.\n"
         );
 
         let user_prompt = cloze_build_user_prompt(3, card_text);
         dbg!(&user_prompt);
         assert_eq!(
             user_prompt,
-            "\n\u{1b}[36mrepeater\u{1b}[0m found \u{1b}[33m3\u{1b}[0m cloze cards missing bracketed deletions.\nPlease format correctly or use AI to generate them for you.\n\n\n\u{1b}[2mExample needing a Cloze:\u{1b}[0m\nthe moon revolves around the earth\n\n\u{1b}[36mrepeater\u{1b}[0m can send this text along with \u{1b}[33m2\u{1b}[0m other cards to an LLM to generate a Cloze for you.\n"
+            "\n\u{1b}[36mrepeater\u{1b}[0m found \u{1b}[33m3\u{1b}[0m cloze cards missing bracketed deletions.\n\n\n\u{1b}[2mExample needing a Cloze:\u{1b}[0m\nthe moon revolves around the earth\n\n\u{1b}[36mrepeater\u{1b}[0m can send this text along with \u{1b}[33m2\u{1b}[0m other cards to an LLM to generate a Cloze for you.\n"
         )
     }
 
@@ -142,7 +141,7 @@ mod tests {
         assert_eq!(
             user_prompt,
             Some(
-                "\n\u{1b}[36mrepeater\u{1b}[0m found \u{1b}[33m1\u{1b}[0m cloze card missing bracketed deletions.\nPlease format correctly or use AI to generate them for you.\n\n\n\u{1b}[2mExample needing a Cloze:\u{1b}[0m\nthe moon revolves around the earth\n\n\u{1b}[36mrepeater\u{1b}[0m can send this text to an LLM to generate a Cloze for you.\n".to_string(),
+                "\n\u{1b}[36mrepeater\u{1b}[0m found \u{1b}[33m1\u{1b}[0m cloze card missing bracketed deletions.\n\n\n\u{1b}[2mExample needing a Cloze:\u{1b}[0m\nthe moon revolves around the earth\n\n\u{1b}[36mrepeater\u{1b}[0m can send this text to an LLM to generate a Cloze for you.\n".to_string(),
             )
         );
 
