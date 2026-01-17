@@ -57,33 +57,30 @@ fn cloze_build_user_prompt(total_needing: usize, card_text: &str) -> String {
 
     user_prompt.push('\n');
     user_prompt.push_str(&format!(
-        "{} found {} cloze card{plural} missing bracketed deletions.\n",
+        "{} found {} cloze card{plural} missing bracketed deletions.\n\
+        Please format correctly or use AI to auto detect deletions.",
         Palette::paint(Palette::INFO, "repeater"),
         Palette::paint(Palette::WARNING, total_needing),
-        plural = plural
+        plural = plural,
     ));
 
     user_prompt.push_str(&format!(
-        "\n{}\n{sample}\n",
+        "\n\n{}\n{sample}\n",
         Palette::dim("Example needing a Cloze:"),
         sample = card_text
     ));
 
-    user_prompt.push('\n');
-    if additional_missing > 0 {
-        let plural = if additional_missing == 1 { "" } else { "s" };
-        user_prompt.push_str(&format!(
-            "{} can send this text along with {} other card{} to an LLM to generate a Cloze for you.\n",
-            Palette::paint(Palette::INFO, "repeater"),
+    let other_fragment = if additional_missing > 0 {
+        let other_plural = if additional_missing == 1 { "" } else { "s" };
+        format!(
+            " along with {} other card{other_plural}",
             Palette::paint(Palette::WARNING, additional_missing),
-            plural
-        ));
+            other_plural = other_plural
+        )
     } else {
-        user_prompt.push_str(&format!(
-            "{} can send this text to an LLM to generate a Cloze for you.\n",
-            Palette::paint(Palette::INFO, "repeater")
-        ));
-    }
+        String::new()
+    };
+    user_prompt.push_str(other_fragment.as_str());
 
     user_prompt
 }
