@@ -80,10 +80,10 @@ impl DrillPreprocessor {
             None => None,
         };
 
-        if cards_needing_clozes > 0 && client.is_some() {
+        if cards_needing_clozes > 0 {
             let ok = ask_yn(
                 format!(
-                    "Use AI to detect bracketed deletions in {}? [y/n]",
+                    "Use AI to detect bracketed deletions in {}?",
                     pluralize("cloze card", cards_needing_clozes)
                 ),
                 true,
