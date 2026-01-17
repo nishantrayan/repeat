@@ -66,4 +66,22 @@ mod tests {
         assert!(is_markdown(Path::new("test.md")));
         assert!(!is_markdown(Path::new("test.txt")));
     }
+
+    #[test]
+    fn test_pluralize_single() {
+        assert_eq!(pluralize("card", 1), "1 card");
+        assert_eq!(pluralize("cloze card", 1), "1 cloze card");
+    }
+
+    #[test]
+    fn test_pluralize_multiple() {
+        assert_eq!(pluralize("card", 2), "2 cards");
+        assert_eq!(pluralize("card", 5), "5 cards");
+        assert_eq!(pluralize("cloze card", 3), "3 cloze cards");
+    }
+
+    #[test]
+    fn test_pluralize_zero() {
+        assert_eq!(pluralize("card", 0), "0 cards");
+    }
 }
