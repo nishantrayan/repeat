@@ -13,6 +13,7 @@ use super::{ensure_client, request_cloze};
 use crate::llm::request_question_rephrase;
 use std::collections::HashMap;
 
+use crate::llm::secrets::API_KEY_ENV;
 use crate::utils::pluralize;
 use futures::stream::{self, StreamExt};
 
@@ -89,9 +90,10 @@ impl DrillPreprocessor {
                 true,
             );
             if !ok {
-                return Err(anyhow::anyhow!(
-                    "Please run `repeater llm key --set ` to enable AI"
-                ));
+                return Err(anyhow::anyhow!(format!(
+                    "No API key provided. Set {} or run `repeater llm key --set <KEY>`.",
+                    API_KEY_ENV
+                ),));
             }
         }
 
